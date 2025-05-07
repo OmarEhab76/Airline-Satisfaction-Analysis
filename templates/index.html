@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Passenger Satisfaction Predictor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center">Passenger Satisfaction Predictor</h1>
+
+        <!-- CSV Upload -->
+        <div class="card mt-4">
+            <div class="card-header">Upload CSV</div>
+            <div class="card-body">
+                <input type="file" id="csvFile" class="form-control" accept=".csv">
+                <button class="btn btn-primary mt-2" onclick="predictFromFile()">Predict</button>
+                <div id="fileResults" class="mt-3"></div>
+            </div>
+        </div>
+
+        <!-- Manual Input -->
+        <div class="card mt-4">
+            <div class="card-header">Manual Input</div>
+            <div class="card-body">
+                <form id="manualForm">
+                    <div class="row" id="manualInputs"></div>
+                    <button type="button" class="btn btn-success mt-3" onclick="predictManual()">Predict</button>
+                </form>
+                <div id="manualResults" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const featureNames = {{ feature_names | tojson }};
+        const inputDiv = document.getElementById('manualInputs');
+
+        const choiceFields = {
+            "Gender": ["Male", "Female"],
+            "Customer Type": ["Loyal Customer", "disloyal Customer"],
+            "Type of Travel": ["Business travel", "Personal Travel"],
+            "Class": ["Eco", "Eco Plus", "Business"]
+        };
+
+        const ratingFields = [
+            "Inflight wifi service", "Departure/Arrival time convenient", "Ease of Online booking",
+            "Gate location", "Food and drink", "Online boarding", "Seat comfort",
+            "Inflight entertainment", "On-board service", "Leg room service",
+            "Baggage handling", "Checkin service", "Inflight service", "Cleanliness"
+        ];
+
+        const positiveNumberFields = [
+            "Age", "Flight Distance", "Departure Delay in Minutes", "Arrival Delay in Minutes"
+        ];
+
+        featureNames.forEach((name, i) => {
+            const col = document.createElement('div');
+            col.className = 'col-md-6';
+            col.innerHTML = `<label>${name}</label>`;
+
+            if (choiceFields[name]) {
+                let select = `<select class='form-control' id='feature_${i}'>`;
+                choiceFields[name].forEach(opt => {
+                    select += `<option value="${opt}">${opt}</option>`;
+                });
+                select += '</select>';
+                col.innerHTML += select;
+
+            } else if (ratingFields.includes(name)) {
+                let select = `<select class='form-control' id='feature_${i}'>`;
+                for (let j = 0; j <= 5; j++) {
+                    select += `<option value="${j}">${j}</option>`;
+                }
+                select += '</select>';
+                col.innerHTML += select;
+
+            } else if (positiveNumberFields.includes(name)) {
+                col.innerHTML += `<input type="number" class="form-control" id="feature_${i}" min="0">`;
+
+            } else {
+                col.innerHTML += `<input type="text" class="form-control" id="feature_${i}">`;
+            }
+
+            inputDiv.appendChild(col);
+        });
+
+        function predictFromFile() {
+            const fileInput = document.getElementById('csvFile');
+            const resultsDiv = document.getElementById('fileResults');
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch('/predict', { method: 'POST', body: formData })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) return resultsDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                    let html = '<h5>Results</h5><table class="table"><thead><tr>';
+                    data.feature_names.forEach(f => html += `<th>${f}</th>`);
+                    html += '<th>Prediction</th></tr></thead><tbody>';
+                    data.results.forEach(r => {
+                        html += '<tr>' + r.input.map(val => `<td>${val}</td>`).join('') + `<td>${r.prediction}</td></tr>`;
+                    });
+                    html += '</tbody></table>';
+                    resultsDiv.innerHTML = html;
+                });
+        }
+
+        function predictManual() {
+            const inputs = featureNames.map((_, i) => document.getElementById(`feature_${i}`).value);
+            fetch('/predict_manual', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: inputs })
+            })
+            .then(res => res.json())
+            .then(data => {
+                const resDiv = document.getElementById('manualResults');
+                if (data.error) return resDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                let html = `<div class="alert alert-success">Prediction: ${data.prediction}</div>`;
+                if (data.probabilities) {
+                    html += '<ul>';
+                    for (let [k, v] of Object.entries(data.probabilities)) {
+                        html += `<li>${k}: ${(v * 100).toFixed(2)}%</li>`;
+                    }
+                    html += '</ul>';
+                }
+                resDiv.innerHTML = html;
+            });
+        }
+    </script>
+</body>
+</html>
